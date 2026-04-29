@@ -9,7 +9,7 @@ from typing import Any
 import pandas as pd
 
 from .backends import BackendConfig, build_backend
-from .power import PowerMonitor
+from .power import PowerMonitor, gpu_info
 from .schema import CSV_COLUMNS, build_record, save_results
 from .tasks import TASKS, build_prompt, get_task_input
 
@@ -197,6 +197,17 @@ def run_experiment(config: dict[str, Any]) -> pd.DataFrame:
         n_reps=int(config.get("n_reps", 2)),
     )
     total = len(run_list)
+    device_info = gpu_info()
+    print(
+        "Detected device: type={device_type} gpu_name={gpu_name} "
+        "gpu_count={gpu_count} nvml_available={nvml_available} "
+        "nvml_has_energy={nvml_has_energy}".format(**device_info)
+    )
+    if device_info["device_type"] == "nvidia_gpu" and not device_info["nvml_available"]:
+        print(
+            "Warning: NVIDIA GPU hardware was expected, but NVML telemetry is not "
+            "available. GPU-specific CSV fields will be empty."
+        )
     monitor = PowerMonitor(process_name=config.get("process_name", backend.provider))
 
     current_model = None
@@ -284,7 +295,8 @@ def run_experiment(config: dict[str, Any]) -> pd.DataFrame:
             f"-> in:{record['actual_input_tokens']} out:{record['actual_output_tokens']} "
             f"{record['wall_time_s']:.1f}s base:{record['baseline_power_w']:.1f}W "
             f"inf:{record['avg_power_w']:.1f}W {record['energy_mwh']:.1f}mWh "
-            f"{record['tokens_per_sec']:.1f}t/s"
+            f"{record['tokens_per_sec']:.1f}t/s "
+            f"gpu:{record.get('gpu_inference_energy_mwh') or 0:.1f}mWh"
         )
 
         if use_s3:

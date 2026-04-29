@@ -9,6 +9,22 @@ You can pick one output mode in the config:
 
 The experiment logic still reuses the task set and measurement flow from `carbntrace`, but the runner here is self-contained.
 
+## GPU Measurement
+
+On NVIDIA-backed machines such as `g4dn.xlarge`, the project now checks for NVIDIA/NVML telemetry at startup and writes explicit GPU fields into the CSV when available.
+
+New GPU-focused CSV columns include:
+
+- `device_type`
+- `gpu_telemetry_available`
+- `gpu_avg_power_w`
+- `gpu_energy_mwh`
+- `baseline_gpu_power_w`
+- `gpu_inference_avg_power_w`
+- `gpu_inference_energy_mwh`
+
+If the run falls back to `power_method = time_estimate`, then real GPU telemetry was not available and those GPU-specific fields will be empty.
+
 ## Folder layout
 
 - `run_experiment.py`: main CLI entry point
@@ -22,7 +38,7 @@ The experiment logic still reuses the task set and measurement flow from `carbnt
 ## Setup
 
 ```bash
-cd ec2_energy_experiment
+cd energy_experiment
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
@@ -42,6 +58,18 @@ Pull the models you want:
 ollama pull llama3.2:3b
 ollama pull gemma2:2b
 ```
+
+On EC2 GPU instances, verify the NVIDIA device before running:
+
+```bash
+nvidia-smi
+```
+
+If you want real GPU power in the CSV, make sure the run detects:
+
+- `power_method = nvml_energy` or `nvml_sample`
+- `device_type = nvidia_gpu`
+- `gpu_telemetry_available = true`
 
 ## Option 1: Save Locally
 
@@ -125,3 +153,4 @@ In S3 mode, the runner resumes from the CSV already stored in S3 and does not ke
 - In `local` mode, `results_file` controls the CSV path and defaults to `data/energy_measurements_ollama.csv`.
 - In `s3` mode, both `s3_bucket` and `s3_key` are required.
 - The same experiment grid, tasks, and power measurement logic are used in both modes.
+- On NVIDIA EC2 instances, Ollama may use the GPU automatically, but the CSV only shows explicit GPU energy when NVML telemetry is available on the machine.

@@ -65,6 +65,7 @@ def gpu_info():
     """Return dict with GPU/chip detection results."""
     if _NVML_AVAILABLE:
         return {
+            'device_type': 'nvidia_gpu',
             'gpu_name': _GPU_NAME,
             'gpu_count': _GPU_COUNT,
             'gpu_cores': None,
@@ -73,6 +74,7 @@ def gpu_info():
         }
     if _MAC_CHIP_NAME:
         return {
+            'device_type': 'apple_silicon',
             'gpu_name': _MAC_CHIP_NAME,
             'gpu_count': 1,
             'gpu_cores': _MAC_GPU_CORES,
@@ -80,6 +82,7 @@ def gpu_info():
             'nvml_has_energy': False,
         }
     return {
+        'device_type': 'cpu_only',
         'gpu_name': None,
         'gpu_count': 0,
         'gpu_cores': None,
@@ -121,6 +124,7 @@ class PowerMonitor:
         self._ollama_pids = []
         self._nvml_energy_start = None
         self._nvml_energy_end = None
+        self._device_info = gpu_info()
         self._backend = self._detect_backend()
         print(f'PowerMonitor: backend={self._backend} (baseline-subtraction mode)')
 
@@ -373,17 +377,24 @@ class PowerMonitor:
             self._cpu_thread.join(timeout=2)
 
         # System-level power
+        gpu_avg_w = None
+        gpu_energy_mwh = None
         if self._backend == 'nvml_energy' and self._nvml_energy_start is not None:
             energy_delta_mj = self._nvml_energy_end - self._nvml_energy_start
             sys_energy_j = energy_delta_mj / 1000.0
             sys_energy_mwh = sys_energy_j / 3.6
             sys_avg_w = sys_energy_j / max(elapsed, 0.001)
+            gpu_avg_w = sys_avg_w
+            gpu_energy_mwh = sys_energy_mwh
         elif self.power_samples:
             watts = [s[1] for s in self.power_samples]
             times = [s[0] for s in self.power_samples]
             sys_energy_j = np.trapezoid(watts, times)
             sys_avg_w = np.mean(watts)
             sys_energy_mwh = sys_energy_j / 3600.0 * 1000
+            if self._backend == 'nvml_sample':
+                gpu_avg_w = sys_avg_w
+                gpu_energy_mwh = sys_energy_mwh
         else:
             sys_avg_w = 18.0
             sys_energy_mwh = sys_avg_w * elapsed / 3600.0 * 1000
@@ -392,10 +403,22 @@ class PowerMonitor:
         baseline_w = self.baseline_power_w if self.baseline_power_w is not None else 0.0
         inference_avg_w = max(sys_avg_w - baseline_w, 0.0)
         inference_energy_mwh = inference_avg_w * elapsed / 3600.0 * 1000
+        baseline_gpu_w = None
+        gpu_inference_avg_w = None
+        gpu_inference_energy_mwh = None
 
         if self._backend == 'nvml_energy' and self._nvml_energy_start is not None:
             baseline_energy_mwh = baseline_w * elapsed / 3600.0 * 1000
             inference_energy_mwh = max(sys_energy_mwh - baseline_energy_mwh, 0.0)
+        if self._backend in ('nvml_energy', 'nvml_sample'):
+            baseline_gpu_w = baseline_w
+            gpu_inference_avg_w = inference_avg_w
+            gpu_inference_energy_mwh = inference_energy_mwh
+        elif self._backend == 'powermetrics':
+            # powermetrics mixes CPU/GPU/ANE into one stream in this project.
+            baseline_gpu_w = None
+            gpu_inference_avg_w = None
+            gpu_inference_energy_mwh = None
 
         # CPU sanity check
         cpu_flag = False
@@ -432,7 +455,14 @@ class PowerMonitor:
             'n_samples': len(self.power_samples),
             'n_cpu_samples': len(self.cpu_samples),
             'method': self._backend,
-            'gpu_name': _GPU_NAME if _NVML_AVAILABLE else _MAC_CHIP_NAME,
-            'gpu_count': _GPU_COUNT if _NVML_AVAILABLE else (1 if _MAC_CHIP_NAME else 0),
-            'gpu_cores': _MAC_GPU_CORES if _MAC_CHIP_NAME else None,
+            'device_type': self._device_info['device_type'],
+            'gpu_telemetry_available': self._backend in ('nvml_energy', 'nvml_sample'),
+            'gpu_avg_power_w': gpu_avg_w,
+            'gpu_energy_mwh': gpu_energy_mwh,
+            'baseline_gpu_power_w': baseline_gpu_w,
+            'gpu_inference_avg_power_w': gpu_inference_avg_w,
+            'gpu_inference_energy_mwh': gpu_inference_energy_mwh,
+            'gpu_name': self._device_info['gpu_name'],
+            'gpu_count': self._device_info['gpu_count'],
+            'gpu_cores': self._device_info['gpu_cores'],
         }
