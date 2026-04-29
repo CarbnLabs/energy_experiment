@@ -1,0 +1,7 @@
+requests
+pandas
+numpy
+psutil
+pynvml
+boto3
+

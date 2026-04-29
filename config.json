@@ -1,0 +1,38 @@
+{
+  "provider": "ollama",
+  "output_mode": "local",
+  "api_base": "http://127.0.0.1:11434",
+  "temperature": 0.7,
+  "models": [
+    "llama3.2:3b",
+    "gemma2:2b"
+  ],
+  "tasks": [
+    "grammar_fix",
+    "translation",
+    "content_generation",
+    "code_generation"
+  ],
+  "input_tokens": [
+    50,
+    200,
+    500
+  ],
+  "output_tokens": [
+    50,
+    200,
+    500
+  ],
+  "cache_modes": [
+    "warm",
+    "cold"
+  ],
+  "n_reps": 2,
+  "process_name": "ollama",
+  "results_file": "data/energy_measurements_ollama.csv",
+  "s3_bucket": "",
+  "s3_key": "",
+  "startup_wait_s": 45,
+  "request_timeout_s": 600,
+  "server_restart_command": null
+}
